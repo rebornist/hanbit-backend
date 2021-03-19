@@ -13,7 +13,7 @@ func ConnectDb() *gorm.DB {
 	// 웹 서비스 정보 중 데이터베이스 정보 추출
 	var DB Database
 	// getInfo, err := GetServiceInfo("database")
-	getInfo, err := GetServiceInfo("database_hanbit")
+	getInfo, err := GetServiceInfo("hanbit_database")
 	if err != nil {
 		fmt.Println(err)
 	}

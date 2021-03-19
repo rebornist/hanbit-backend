@@ -5,7 +5,7 @@ import (
 	"time"
 )
 
-func CerateCookie(name, token, path string) *http.Cookie {
+func CreateCookie(name, token, path string) *http.Cookie {
 	cookie := new(http.Cookie)
 	cookie.Name = name
 	cookie.Value = token

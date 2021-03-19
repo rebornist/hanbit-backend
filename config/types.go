@@ -7,6 +7,7 @@ type Database struct {
 	Name     string
 	User     string
 	Password string
+	Tables   map[string]string
 }
 
 // Firebase 접속 정보
@@ -65,4 +66,17 @@ type Encrypt struct {
 	Dir  string `json:"dir"`
 	Cert string `json:"cert"`
 	Key  string `json:"key"`
+}
+
+// Media 접속 정보
+type Media struct {
+	Host     string `json:"host"`
+	Root     string `json:"root"`
+	TestRoot string `json:"test_root"`
+	TestUser string `json:"test_user"`
+}
+
+// service 접속 정보
+type Service struct {
+	Test string `json:"test"`
 }

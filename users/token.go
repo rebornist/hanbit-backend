@@ -34,6 +34,5 @@ func RemoveToken(c echo.Context) error {
 	cookie.Value = ""
 	cookie.Expires = time.Unix(0, 0)
 	c.SetCookie(cookie)
-	return c.Redirect(http.StatusFound, "https://www.widus.xyz")
-	// return c.Redirect(http.StatusFound, "http://localhost:3000")
+	return c.Redirect(http.StatusFound, "/")
 }

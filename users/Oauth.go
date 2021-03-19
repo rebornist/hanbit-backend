@@ -44,7 +44,6 @@ func login(c echo.Context, name string) error {
 	if err != nil {
 		return err
 	}
-
 	c.SetCookie(cookie)
 
 	cookie2 := mixins.DeleteCookie("state")

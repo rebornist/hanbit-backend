@@ -73,7 +73,7 @@ func FirebaseDeployCookie(code, state, name string) (*http.Cookie, error) {
 		return nil, err
 	}
 
-	cookie = mixins.CerateCookie("ASESS", cToken, "/api/user")
+	cookie = mixins.CreateCookie("ASESS", cToken, "/api/user")
 	return cookie, nil
 }
 
@@ -229,6 +229,15 @@ func FirebaseCreateCustomToken(uid string) (string, error) {
 		return token, err
 	}
 	return token, err
+}
+
+// Id 토큰 체크
+func FirebaseCheckIdToken(idToken string) error {
+	_, err := client.VerifyIDToken(ctx, idToken)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func getOAuthInfo(name string) ([]byte, error) {
