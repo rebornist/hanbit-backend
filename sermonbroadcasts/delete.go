@@ -1,4 +1,4 @@
-package gallaries
+package sermonbroadcasts
 
 import (
 	"fmt"
@@ -14,12 +14,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func GallaryDeleteView(c echo.Context) error {
+func BroadcastDeleteView(c echo.Context) error {
 	db := c.Request().Context().Value("DB").(*gorm.DB)
 	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
-	var gallary GallaryResponse
-	var gallaryItem GallaryDetailResponse
+	var broadcast BroadcastResponse
+	var sermonItem BroadcastDetailResponse
 
 	idToken := c.Request().Header.Get("Authorization")
 	idToken = strings.Replace(idToken, "token ", "", -1)
@@ -38,20 +38,20 @@ func GallaryDeleteView(c echo.Context) error {
 	r, _ := regexp.Compile("[a-zA-Z0-9]+")
 	id = r.FindString(fmt.Sprintf("%v", id))
 
-	result, err := getGallaryDetailInfo(db, gallary, id)
+	result, err := getBroadcastDetailInfo(db, broadcast, id)
 	if err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	gallaryItem.Gallary = result
-	gallaryItem.CsrfName = "csrf_token"
-	gallaryItem.CsrfValue = cookie.Value
+	sermonItem.Broadcast = result
+	sermonItem.CsrfName = "csrf_token"
+	sermonItem.CsrfValue = cookie.Value
 
 	mixins.CreateLogger(db, logger, http.StatusOK, nil)
-	return c.JSON(http.StatusOK, gallaryItem)
+	return c.JSON(http.StatusOK, sermonItem)
 }
 
-func GallaryDelete(c echo.Context) error {
+func BroadcastDelete(c echo.Context) error {
 	db := c.Request().Context().Value("DB").(*gorm.DB)
 	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
@@ -63,7 +63,7 @@ func GallaryDelete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusUnauthorized, err)
 	}
 
-	var gallary Gallary
+	var broadcast Broadcast
 	var images []images.Image
 
 	// 웹 서비스 정보 중 데이터베이스 정보 추출
@@ -77,11 +77,11 @@ func GallaryDelete(c echo.Context) error {
 	id := mixins.Unsigning(c.Param("id"))
 	r, _ := regexp.Compile("[a-zA-Z0-9]+")
 	id = r.FindString(fmt.Sprintf("%v", id))
-	if err := db.Where("id = ?", id).Find(&gallary).Error; err != nil {
+	if err := db.Where("id = ?", id).Find(&broadcast).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	gallary.Status = 0
+	broadcast.Status = 0
 
 	if err := db.Table(tImage).Where("user_id = ? AND category_id = ?", userInfo.UID, id).Scan(&images).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
@@ -96,16 +96,16 @@ func GallaryDelete(c echo.Context) error {
 		}
 	}
 
-	if err := db.Save(&gallary).Error; err != nil {
+	if err := db.Save(&broadcast).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
 	mixins.CreateLogger(db, logger, http.StatusOK, nil)
-	return c.String(http.StatusOK, fmt.Sprintf("%s's delete success", gallary.Title))
+	return c.String(http.StatusOK, fmt.Sprintf("%s's delete success", broadcast.Title))
 }
 
-func GallaryImageDelete(c echo.Context) error {
+func BroadcastImageDelete(c echo.Context) error {
 	db := c.Request().Context().Value("DB").(*gorm.DB)
 	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
@@ -120,9 +120,11 @@ func GallaryImageDelete(c echo.Context) error {
 	// 웹 서비스 정보 중 데이터베이스 정보 추출
 	DB, err := getDBInfo()
 	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 	tImage := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["img"])
+	tSermon := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["ser"])
 
 	media, err := getMediaInfo()
 	if err != nil {
@@ -142,17 +144,22 @@ func GallaryImageDelete(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	var gallary GallaryResponse
-	var gallaryItem GallaryDetailResponse
+	if err := db.Table(tSermon).Where("id = ?", id).Update("photo", "").Error; err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
 
-	result, err := getGallaryDetailInfo(db, gallary, id)
+	var broadcast BroadcastResponse
+	var broadcastItem BroadcastDetailResponse
+
+	result, err := getBroadcastDetailInfo(db, broadcast, id)
 	if err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	gallaryItem.Gallary = result
+	broadcastItem.Broadcast = result
 
 	mixins.CreateLogger(db, logger, http.StatusOK, nil)
-	return c.JSON(http.StatusOK, gallaryItem)
+	return c.JSON(http.StatusOK, broadcastItem)
 }

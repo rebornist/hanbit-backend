@@ -14,17 +14,11 @@ import (
 	"github.com/rebornist/hanbit/gallaries"
 	"github.com/rebornist/hanbit/images"
 	"github.com/rebornist/hanbit/manages"
+	"github.com/rebornist/hanbit/mixins"
+	"github.com/rebornist/hanbit/sermonbroadcasts"
 	"github.com/rebornist/hanbit/sermons"
 	"github.com/rebornist/hanbit/users"
 )
-
-// type Template struct {
-// 	templates *template.Template
-// }
-
-// func (t *Template) Render(w io.Writer, name string, data interface{}, c echo.Context) error {
-// 	return t.templates.ExecuteTemplate(w, name, data)
-// }
 
 func main() {
 	comm := os.Args[1]
@@ -38,35 +32,38 @@ func main() {
 			return
 		}
 	} else {
-		e := echo.New()
+		db := config.ConnectDb()
 
-		// e.Use(mixins.Logger())
-		e.Use(middleware.Recover())
-		e.Use(middleware.Logger())
-		e.Use(middleware.CORS())
-		e.Use(middleware.Secure())
-		e.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
-			TokenLookup:    "header:X-XSRF-TOKEN",
-			CookieHTTPOnly: true,
-			CookieSecure:   true,
-			CookiePath:     "/",
+		e := echo.New()
+		e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
+			AllowOrigins:     []string{"http://localhost:3000", "https://fir-hanbit.web.app", "http://localhost:5000"},
+			AllowMethods:     []string{http.MethodGet, http.MethodHead, http.MethodPut, http.MethodPatch, http.MethodPost, http.MethodDelete},
+			AllowCredentials: true,
 		}))
+		// 각 request마다 고유의 ID를 부여
+		e.Use(middleware.RequestID())
+		e.Use(mixins.DbContext(db))
+		e.Use(middleware.Recover())
+		e.Use(mixins.LogrusLogger())
+		e.Use(middleware.Secure())
 
 		api := e.Group("/api")
 		api.GET("", func(c echo.Context) error {
 			return c.Redirect(http.StatusFound, "/")
 		})
-
-		api.POST("/imageUpload", images.CKEditorImageUploader)
-
-		cb := api.Group(("/callback"))
-		cb.GET("/naver", users.NaverLogin)
-		cb.GET("/kakao", users.KakaoLogin)
+		api.Use(middleware.CSRFWithConfig(middleware.CSRFConfig{
+			TokenLookup:    "header:X-XSRF-TOKEN",
+			CookieHTTPOnly: true,
+			CookiePath:     "/api",
+		}))
 
 		apiUser := api.Group("/user")
-		apiUser.GET("", users.UserInfo)
-		apiUser.GET("/get", users.GetUser)
-		apiUser.GET("/signin", users.Login)
+		apiUser.GET("/permission", users.UserInfo)
+		apiUser.GET("/signin", users.LoginView)
+		apiUser.POST("/create", users.CreateUser)
+		apiUser.GET("/signup", users.Signup)
+		apiUser.GET("/oauthLogin/:name", users.OAuthLogin)
+		apiUser.GET("/oauthSignup/:name", users.OAuthSignup)
 		apiUser.GET("/signout", users.Logout)
 
 		sermon := api.Group("/sermon")
@@ -79,6 +76,19 @@ func main() {
 		sermonPost.POST("/create", sermons.SermonCreate)
 		sermonPost.POST("/:id/edit", sermons.SermonEdit)
 		sermonPost.POST("/:id/delete", sermons.SermonDelete)
+		sermonPost.POST("/:id/:category/:name/delete", sermons.SermonImageDelete)
+
+		broadcast := api.Group("/broadcast")
+		broadcast.GET("/list", sermonbroadcasts.BroadcastList)
+		broadcastPost := broadcast.Group("/post")
+		broadcastPost.GET("/:id", sermonbroadcasts.BroadcastDetail)
+		broadcastPost.GET("/create", sermonbroadcasts.BroadcastCreateView)
+		broadcastPost.GET("/:id/edit", sermonbroadcasts.BroadcastEditView)
+		broadcastPost.GET("/:id/delete", sermonbroadcasts.BroadcastDeleteView)
+		broadcastPost.POST("/create", sermonbroadcasts.BroadcastCreate)
+		broadcastPost.POST("/:id/edit", sermonbroadcasts.BroadcastEdit)
+		broadcastPost.POST("/:id/delete", sermonbroadcasts.BroadcastDelete)
+		broadcastPost.POST("/:id/:category/:name/delete", sermonbroadcasts.BroadcastImageDelete)
 
 		board := api.Group("/board")
 		board.GET("/list", boards.BoardList)
@@ -90,6 +100,7 @@ func main() {
 		boardPost.POST("/create", boards.BoardCreate)
 		boardPost.POST("/:id/edit", boards.BoardEdit)
 		boardPost.POST("/:id/delete", boards.BoardDelete)
+		boardPost.POST("/:id/:category/:name/delete", boards.BoardImageDelete)
 
 		gallary := api.Group("/gallary")
 		gallary.GET("/list", gallaries.GallaryList)
@@ -101,16 +112,18 @@ func main() {
 		gallaryPost.POST("/create", gallaries.GallaryCreate)
 		gallaryPost.POST("/:id/edit", gallaries.GallaryEdit)
 		gallaryPost.POST("/:id/delete", gallaries.GallaryDelete)
+		gallaryPost.POST("/:id/:category/:name/delete", gallaries.GallaryImageDelete)
+
+		photo := api.Group("/image")
+		photo.POST("/upload", images.CKEditorImageUploader)
 
 		var ce config.Encrypt
-		getInfo, err := config.GetServiceInfo("letsencrypt")
+		getHttpsInfo, err := config.GetServiceInfo("letsencrypt")
 		if err != nil {
 			e.Logger.Fatal(err)
 		}
-		json.Unmarshal(getInfo, &ce)
+		json.Unmarshal(getHttpsInfo, &ce)
 
-		// e.Logger.Fatal(e.Start(":80"))
-		// e.Logger.Fatal(e.Start(comm))
 		e.Logger.Fatal(e.StartTLS(comm, fmt.Sprintf("%s/%s", ce.Dir, ce.Cert), fmt.Sprintf("%s/%s", ce.Dir, ce.Key)))
 	}
 
@@ -124,13 +137,19 @@ func command() error {
 		if err != nil {
 			return err
 		}
-	case "seed":
+	case "seed_sermon":
 		number := os.Args[3]
 		table := os.Args[4]
 		if number == "" || table == "" {
 			return errors.New("올바른 값을 입력해주세요.")
 		}
 		err := manages.Seed(number, table)
+		if err != nil {
+			return err
+		}
+	case "seed_post":
+		table := os.Args[3]
+		err := manages.SeedPost(table)
 		if err != nil {
 			return err
 		}

@@ -1,4 +1,4 @@
-package boards
+package sermonbroadcasts
 
 import (
 	"fmt"
@@ -8,18 +8,17 @@ import (
 	"strings"
 
 	"github.com/labstack/echo/v4"
-	"github.com/rebornist/hanbit/images"
 	"github.com/rebornist/hanbit/mixins"
 	"github.com/rebornist/hanbit/users"
 	"github.com/sirupsen/logrus"
 	"gorm.io/gorm"
 )
 
-func BoardCreateView(c echo.Context) error {
+func BroadcastCreateView(c echo.Context) error {
 	db := c.Request().Context().Value("DB").(*gorm.DB)
 	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
-	var sermonItem BoardDetailResponse
+	var broadcastItem BroadcastDetailResponse
 
 	idToken := c.Request().Header.Get("Authorization")
 	idToken = strings.Replace(idToken, "token ", "", -1)
@@ -34,13 +33,14 @@ func BoardCreateView(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	sermonItem.CsrfName = "csrf_token"
-	sermonItem.CsrfValue = cookie.Value
+	broadcastItem.CsrfName = "csrf_token"
+	broadcastItem.CsrfValue = cookie.Value
 
-	return c.JSON(http.StatusOK, sermonItem)
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
+	return c.JSON(http.StatusOK, broadcastItem)
 }
 
-func BoardCreate(c echo.Context) error {
+func BroadcastCreate(c echo.Context) error {
 	db := c.Request().Context().Value("DB").(*gorm.DB)
 	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
@@ -59,16 +59,15 @@ func BoardCreate(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 	tPost := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["pos"])
-	tImage := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["img"])
 
 	// 레코드 갯수 카운트
 	var cnt int64
-	if err := db.Table(DB.Tables["boa"]).Where("user_id = ?", userInfo.UID).Count(&cnt).Error; err != nil {
+	if err := db.Table(DB.Tables["bro"]).Where("user_id = ?", userInfo.UID).Count(&cnt).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	var board Board
+	var broadcast Broadcast
 	var editSummary string
 	var category string
 
@@ -82,7 +81,7 @@ func BoardCreate(c echo.Context) error {
 	}
 
 	// Post 타입 추출
-	if err := db.Table(tPost).Select("id").Where("title = ?", DB.Tables["boa"]).Scan(&category).Error; err != nil {
+	if err := db.Table(tPost).Select("id").Where("title = ?", DB.Tables["bro"]).Scan(&category).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -95,46 +94,25 @@ func BoardCreate(c echo.Context) error {
 	// ID 및 파일명 생성
 	cid := fmt.Sprintf("%s%s%08d", category, username, cnt+1)
 
-	board.ID = cid
-	board.UserId = userInfo.UID
-	board.Title = c.FormValue("title")
-	board.Content = c.FormValue("content")
-	board.Summary = editSummary
+	broadcast.ID = cid
+	broadcast.UserId = userInfo.UID
+	broadcast.Title = c.FormValue("title")
+	broadcast.Broadcast = c.FormValue("broadcast")
+	broadcast.Content = c.FormValue("content")
+	broadcast.Summary = editSummary
 
 	postType, err := strconv.ParseInt(c.FormValue("postType"), 10, 64)
 	if err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
-	board.PostType = uint(postType)
+	broadcast.PostType = uint(postType)
 
-	file, err := c.FormFile("photo")
-	if err != nil {
-		if err.Error() != "http: no such file" {
-			mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-	}
-
-	if file != nil {
-		photo, err := images.DefaultImageUploader(file, db, cid, userInfo, uint(postType))
-		if err != nil {
-			mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-		board.Photo = photo
-
-		if err := db.Table(tImage).Where("user_id = ? AND category_id = ?", userInfo.UID, cid).Updates(map[string]interface{}{"open_grade": 0, "status": 1}).Error; err != nil {
-			mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
-			return echo.NewHTTPError(http.StatusInternalServerError, err)
-		}
-	}
-
-	if err := db.Create(&board).Error; err != nil {
+	if err := db.Create(&broadcast).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
 	mixins.CreateLogger(db, logger, http.StatusOK, nil)
-	return c.String(http.StatusOK, fmt.Sprintf("%s's create success", board.Title))
+	return c.String(http.StatusOK, fmt.Sprintf("%s's create success", broadcast.Title))
 }

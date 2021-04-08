@@ -22,6 +22,7 @@ type Firebase struct {
 	TokenUri                string `json:"token_uri"`
 	AuthProviderX509CertUrl string `json:"auth_provider_x509_cert_url"`
 	ClientX509CertUrl       string `json:"client_x509_cert_url"`
+	PrivateKeyAesId         string `json:"private_key_aes_id"`
 }
 
 // OAuth Token 정보
@@ -72,6 +73,7 @@ type Encrypt struct {
 type Media struct {
 	Host     string `json:"host"`
 	Root     string `json:"root"`
+	Ckeditor string `json:"ckeditor"`
 	TestRoot string `json:"test_root"`
 	TestUser string `json:"test_user"`
 }
@@ -79,4 +81,11 @@ type Media struct {
 // service 접속 정보
 type Service struct {
 	Test string `json:"test"`
+}
+
+// 공통 Responst type
+type CommonResponse struct {
+	Code    int               `json:"code"`
+	Message string            `json:"message"`
+	Data    map[string]string `json:"data"`
 }

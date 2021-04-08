@@ -1,4 +1,4 @@
-package boards
+package sermonbroadcasts
 
 import (
 	"errors"
@@ -12,12 +12,12 @@ import (
 	"gorm.io/gorm"
 )
 
-func BoardList(c echo.Context) error {
+func BroadcastList(c echo.Context) error {
 	db := c.Request().Context().Value("DB").(*gorm.DB)
 	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
-	var boards []BoardResponse
-	var boardList BoardListResponse
+	var broadcasts []BroadcastResponse
+	var broadcastList BroadcastListResponse
 	var cnt int64
 
 	// 웹 서비스 정보 중 데이터베이스 정보 추출
@@ -27,7 +27,7 @@ func BoardList(c echo.Context) error {
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	tBoard := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["boa"])
+	tBroadcast := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["bro"])
 	tUser := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["usr"])
 
 	itemNum := 10
@@ -35,11 +35,13 @@ func BoardList(c echo.Context) error {
 	page, err := strconv.ParseInt(c.QueryParam("page"), 10, 64)
 	if err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"message": err.Error(),
+		})
 	}
 
 	offset := (int(page) - 1) * itemNum
-	if err := db.Table(tBoard).Where(fmt.Sprintf("%s.status = ?", DB.Tables["boa"]), 1).Count(&cnt).Error; err != nil {
+	if err := db.Table(tBroadcast).Where(fmt.Sprintf("%s.status = ?", DB.Tables["bro"]), 1).Count(&cnt).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
@@ -51,41 +53,41 @@ func BoardList(c echo.Context) error {
 	}
 
 	if err := db.
-		Table(tBoard).
-		Order(fmt.Sprintf("%s.post_type desc, %s.created_at desc", DB.Tables["boa"], DB.Tables["boa"])).
+		Table(tBroadcast).
+		Order(fmt.Sprintf("%s.created_at desc", DB.Tables["bro"])).
 		Limit(itemNum).
 		Offset(offset).
 		Select(fmt.Sprintf(
-			"%s.id, %s.user_id, %s.email, %s.title, %s.photo, %s.post_type, %s.content, %s.summary, %s.status, %s.created_at",
-			DB.Tables["boa"],
-			DB.Tables["boa"],
+			"%s.id, %s.user_id, %s.email, %s.title, %s.broadcast, %s.post_type, %s.content, %s.summary, %s.status, %s.created_at",
+			DB.Tables["bro"],
+			DB.Tables["bro"],
 			DB.Tables["usr"],
-			DB.Tables["boa"],
-			DB.Tables["boa"],
-			DB.Tables["boa"],
-			DB.Tables["boa"],
-			DB.Tables["boa"],
-			DB.Tables["boa"],
-			DB.Tables["boa"],
+			DB.Tables["bro"],
+			DB.Tables["bro"],
+			DB.Tables["bro"],
+			DB.Tables["bro"],
+			DB.Tables["bro"],
+			DB.Tables["bro"],
+			DB.Tables["bro"],
 		)).
-		Joins(fmt.Sprintf("left join %s on %s.uid = %s.user_id", tUser, DB.Tables["usr"], DB.Tables["boa"])).
-		Where(fmt.Sprintf("%s.status = ?", DB.Tables["boa"]), 1).
-		Scan(&boards).Error; err != nil {
+		Joins(fmt.Sprintf("left join %s on %s.uid = %s.user_id", tUser, DB.Tables["usr"], DB.Tables["bro"])).
+		Where(fmt.Sprintf("%s.status = ?", DB.Tables["bro"]), 1).
+		Scan(&broadcasts).Error; err != nil {
 		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	var respData []BoardResponse
-	for _, board := range boards {
-		board.ID = mixins.Signing(board.ID)
-		respData = append(respData, board)
+	var respData []BroadcastResponse
+	for _, broadcast := range broadcasts {
+		broadcast.ID = mixins.Signing(broadcast.ID)
+		respData = append(respData, broadcast)
 	}
 
-	boardList.Message = "search board successful"
-	boardList.Page = int(page)
-	boardList.Boards = respData
-	boardList.TotalItems = int(cnt)
+	broadcastList.Message = "search broadcasts successful"
+	broadcastList.Page = int(page)
+	broadcastList.Broadcasts = respData
+	broadcastList.TotalItems = int(cnt)
 
 	mixins.CreateLogger(db, logger, http.StatusOK, nil)
-	return c.JSON(http.StatusOK, boardList)
+	return c.JSON(http.StatusOK, broadcastList)
 }

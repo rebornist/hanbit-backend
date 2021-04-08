@@ -2,50 +2,48 @@ package users
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/gommon/random"
 	"github.com/rebornist/hanbit/config"
 	"github.com/rebornist/hanbit/mixins"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
-func GetUser(c echo.Context) error {
-	name := "ASESS"
-	cookie, err := c.Cookie(name)
-	if err != nil {
-		return c.JSON(http.StatusUnauthorized, "Can't get authorization code.")
-	}
-	data := map[string]string{
-		"token": cookie.Value,
-	}
-	cookie2 := mixins.DeleteCookie(name)
-	c.SetCookie(cookie2)
-	return c.JSON(http.StatusOK, data)
-}
-
 func UserInfo(c echo.Context) error {
-	// 웹 서비스 정보 중 데이터베이스 정보 추출
-	DB, err := getDBInfo()
-	if err != nil {
-		return echo.NewHTTPError(http.StatusInternalServerError, err)
-	}
-
-	tUser := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["usr"])
-
-	user := new(User)
-	userInfo := c.QueryParam("userInfo")
-	var db = config.ConnectDb()
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
 	idToken := c.Request().Header.Get("Authorization")
 	idToken = strings.Replace(idToken, "token ", "", -1)
-	if err := FirebaseCheckIdToken(idToken); err != nil {
+	userInfo, err := FirebaseGetUserInfo(idToken)
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusUnauthorized, err)
 		return echo.NewHTTPError(http.StatusUnauthorized, err)
 	}
 
-	if err := db.Table(tUser).Where("uid = ?", userInfo).Scan(&user).Error; err != nil {
+	// 웹 서비스 정보 중 데이터베이스 정보 추출
+	DB, err := getDBInfo()
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+	tUser := fmt.Sprintf("%s.%s", DB.Name, DB.Tables["usr"])
+
+	user := new(User)
+
+	if err := db.Table(tUser).Where("uid = ?", userInfo.UID).Scan(&user).Error; err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	if user.Email == "" {
+		err = errors.New("Non-existent user")
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -53,19 +51,149 @@ func UserInfo(c echo.Context) error {
 		"grade": user.Grade,
 	}
 
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
 	return c.JSON(http.StatusOK, data)
 }
 
-func Login(c echo.Context) error {
-	name := "state"
-	value := random.New().String(64, random.Alphanumeric)
-	cookie := mixins.CreateCookie(name, value, "/api/callback")
-	c.SetCookie(cookie)
-	return c.HTML(http.StatusOK, fmt.Sprintf("<input type=hidden name=%s value=%s />", name, value))
+func LoginView(c echo.Context) error {
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
+
+	cookie, err := c.Cookie("_csrf")
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
+	return c.HTML(http.StatusOK, fmt.Sprintf("<input type=hidden id=%s name=%s value=%s />", cookie.Name, cookie.Name, cookie.Value))
 }
 
 func Logout(c echo.Context) error {
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
+
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
 	return c.String(http.StatusOK, "로그아웃")
+}
+
+func CreateUser(c echo.Context) error {
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
+
+	idToken := c.Request().Header.Get("Authorization")
+	idToken = strings.Replace(idToken, "token ", "", -1)
+	userInfo, err := FirebaseGetUserInfo(idToken)
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusUnauthorized, err)
+		return echo.NewHTTPError(http.StatusUnauthorized, err)
+	}
+
+	u, err := client.GetUser(ctx, userInfo.UID)
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	var cnt int64
+	if err = db.Table("users").Count(&cnt).Error; err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	var userCnt int64
+	if err = db.Table("users").Where("uid = ?", u.UID).Count(&userCnt).Error; err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	if userCnt < 1 {
+		user := new(User)
+		user.ID = uint(cnt) + 1
+		user.UID = u.UID
+		user.Email = u.Email
+		user.Name = u.DisplayName
+		user.PhoneNumber = u.PhoneNumber
+
+		if err = db.Create(&user).Error; err != nil {
+			mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+	}
+
+	customToken, err := FirebaseCreateCustomToken(u.UID)
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	data := map[string]string{
+		"message": "유저생성 완료",
+		"token":   customToken,
+	}
+
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
+	return c.JSON(http.StatusOK, data)
+
+}
+
+func Signup(c echo.Context) error {
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
+
+	idToken := c.Request().Header.Get("Authorization")
+	idToken = strings.Replace(idToken, "token ", "", -1)
+	userInfo, err := FirebaseGetUserInfo(idToken)
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusUnauthorized, err)
+		return echo.NewHTTPError(http.StatusUnauthorized, err)
+	}
+
+	u, err := client.GetUser(ctx, userInfo.UID)
+	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	var cnt int64
+	if err = db.Table("users").Count(&cnt).Error; err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	var userCnt int64
+	if err = db.Table("users").Where("uid = ?", u.UID).Count(&userCnt).Error; err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
+	}
+
+	if userCnt < 1 {
+		user := new(User)
+		user.ID = uint(cnt) + 1
+		user.UID = u.UID
+		user.Email = u.Email
+		user.Name = u.DisplayName
+		user.PhoneNumber = u.PhoneNumber
+		user.Grade = 1
+
+		if err = db.Create(&user).Error; err != nil {
+			mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+	} else {
+		if err = db.Table("users").Where("uid = ?", u.UID).Update("grade", 1).Error; err != nil {
+			mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+			return echo.NewHTTPError(http.StatusInternalServerError, err)
+		}
+	}
+
+	data := map[string]string{
+		"message": "회원가입 성공",
+	}
+
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
+	return c.JSON(http.StatusOK, data)
+
 }
 
 func getDBInfo() (config.Database, error) {

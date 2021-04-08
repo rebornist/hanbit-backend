@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/rebornist/hanbit/config"
+	"github.com/rebornist/hanbit/mixins"
 )
 
 func Seed(number, table string) error {
@@ -55,4 +56,32 @@ func Seed(number, table string) error {
 	}
 
 	return nil
+}
+
+func SeedPost(table string) error {
+	// db connect
+	db := config.ConnectDb()
+	posts := map[int]string{
+		0: "sermons",
+		1: "gallaries",
+		2: "boards",
+		3: "images",
+		4: "loggers",
+		5: "broadcasts",
+	}
+
+	for i := 0; i < len(posts); i++ {
+		id := mixins.CreateRandomString(16)
+		if err := db.Table(table).Create(map[string]interface{}{
+			"id":         id,
+			"number":     uint(i + 1),
+			"title":      posts[i],
+			"created_at": time.Now(),
+		}).Error; err != nil {
+			return err
+		}
+	}
+
+	return nil
+
 }

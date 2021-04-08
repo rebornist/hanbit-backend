@@ -16,7 +16,7 @@ type User struct {
 	Age         uint8     `gorm:"column:age;size:3;default:0" json:"age"`
 	Birthday    string    `gorm:"column:birthday;default:'1900-01-01'" json:"birthday"`
 	PhoneNumber string    `gorm:"column:phone_number;type:varchar(50);default:''" json:"phone_number"`
-	Grade       uint8     `gorm:"column:grade;size:1;default:1" json:"grade"`
+	Grade       uint8     `gorm:"column:grade;size:1;default:0" json:"grade"`
 	CreatedAt   time.Time `gorm:"column:created_at" json:"created_at"`
 	UpdatedAt   time.Time `gorm:"column:updated_at" json:"updated_at"`
 }
@@ -50,23 +50,26 @@ func CheckUser(email, uid string) error {
 	}
 
 	err = db.Where("uid=?", uid).First(&u).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		// user 테이블 데이터 개수 확인
-		if err := db.Model(&u).Count(&cnt).Error; err != nil {
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// user 테이블 데이터 개수 확인
+			if err := db.Model(&u).Count(&cnt).Error; err != nil {
+				return err
+			}
+
+			// user 정보 생성
+			u.ID = uint(cnt) + 1
+			u.UID = uid
+			u.Email = email
+			u.CreatedAt = time.Now()
+
+			// insert user info
+			if err := db.Create(&u).Error; err != nil {
+				return err
+			}
+		} else {
 			return err
 		}
-
-		// user 정보 생성
-		u.ID = uint(cnt) + 1
-		u.UID = uid
-		u.Email = email
-		u.CreatedAt = time.Now()
-
-		// insert user info
-		if err := db.Create(&u).Error; err != nil {
-			return err
-		}
-		return nil
 	}
-	return err
+	return nil
 }

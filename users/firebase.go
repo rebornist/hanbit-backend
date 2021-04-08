@@ -77,6 +77,47 @@ func FirebaseDeployCookie(code, state, name string) (*http.Cookie, error) {
 	return cookie, nil
 }
 
+func CreateCustomToken(code, state, name string) (string, error) {
+	var profile config.OAuthProfile
+	var token config.OAuthToken
+	var uid string
+	var cToken string
+
+	token, err = GetAuthToken(code, state, name)
+	if err != nil {
+		return "", err
+	}
+
+	profile, err = GetProfile(token.ProfileUri, token.TokenType, token.AccessToken, name)
+	if err != nil {
+		return "", err
+	}
+
+	uid, err = FirebaseGetUser(profile.Email)
+	if err != nil {
+		if errorutils.IsNotFound(err) {
+			uid, err = FirebaseCreateUser(profile.Email, profile.MobileE164, profile.ProfileImage)
+			if err != nil {
+				return "", err
+			}
+		} else {
+			return "", err
+		}
+	}
+
+	cToken, err = FirebaseCreateCustomToken(uid)
+	if err != nil {
+		return "", err
+	}
+
+	err = CheckUser(profile.Email, uid)
+	if err != nil {
+		return "", err
+	}
+
+	return cToken, nil
+}
+
 // OAuth 콜백 데이터 전처리
 func GetAuthToken(code, state, name string) (config.OAuthToken, error) {
 	var address string
@@ -238,6 +279,15 @@ func FirebaseCheckIdToken(idToken string) error {
 		return err
 	}
 	return nil
+}
+
+// Id 토큰 체크
+func FirebaseGetUserInfo(idToken string) (*auth.Token, error) {
+	authInfo, err := client.VerifyIDToken(ctx, idToken)
+	if err != nil {
+		return nil, err
+	}
+	return authInfo, nil
 }
 
 func getOAuthInfo(name string) ([]byte, error) {

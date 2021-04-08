@@ -5,49 +5,52 @@ import (
 	"net/http"
 
 	"github.com/labstack/echo/v4"
+	"github.com/rebornist/hanbit/config"
 	"github.com/rebornist/hanbit/mixins"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
-func NaverLogin(c echo.Context) error {
-	name := "naver"
-	err := login(c, name)
-	if err != nil {
-		return err
-	}
-	return c.Redirect(http.StatusFound, "/")
+func OAuthLogin(c echo.Context) error {
+	return oAuth(c)
 }
 
-func KakaoLogin(c echo.Context) error {
-	name := "kakao"
-	err := login(c, name)
-	if err != nil {
-		return err
-	}
-	return c.Redirect(http.StatusFound, "/")
+func OAuthSignup(c echo.Context) error {
+	return oAuth(c)
 }
 
-func login(c echo.Context, name string) error {
+func oAuth(c echo.Context) error {
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
 
+	var resp config.CommonResponse
+
+	name := c.Param("name")
 	code := c.QueryParam("code")
 	state := c.QueryParam("state")
 
-	token, err := c.Cookie("state")
+	token, err := c.Cookie("_csrf")
 	if err != nil {
-		return err
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
 	if state != token.Value {
-		return errors.New("올바른 상태 값이 아닙니다.")
+		err = errors.New("올바른 상태 값이 아닙니다.")
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
-	cookie, err := FirebaseDeployCookie(code, state, name)
+	customToken, err := CreateCustomToken(code, state, name)
 	if err != nil {
-		return err
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
+		return echo.NewHTTPError(http.StatusInternalServerError, err.Error())
 	}
-	c.SetCookie(cookie)
 
-	cookie2 := mixins.DeleteCookie("state")
-	c.SetCookie(cookie2)
+	resp.Code = http.StatusOK
+	resp.Message = "signin sucessful"
+	resp.Data = map[string]string{"token": customToken}
 
-	return nil
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
+	return c.JSON(http.StatusOK, resp)
 }

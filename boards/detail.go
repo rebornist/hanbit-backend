@@ -3,22 +3,33 @@ package boards
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 
 	"github.com/labstack/echo/v4"
+	"github.com/rebornist/hanbit/mixins"
+	"github.com/sirupsen/logrus"
+	"gorm.io/gorm"
 )
 
 func BoardDetail(c echo.Context) error {
-	id := c.Param("id")
+	db := c.Request().Context().Value("DB").(*gorm.DB)
+	logger := c.Request().Context().Value("LOG").(*logrus.Entry)
+
+	id := mixins.Unsigning(c.Param("id"))
+	r, _ := regexp.Compile("[a-zA-Z0-9]+")
+	id = r.FindString(fmt.Sprintf("%v", id))
 	var board BoardResponse
 	var boardItem BoardDetailResponse
 
-	result, err := getBoardDetailInfo(board, id)
+	result, err := getBoardDetailInfo(db, board, id)
 	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
 	cookie, err := c.Cookie("_csrf")
 	if err != nil {
+		mixins.CreateLogger(db, logger, http.StatusInternalServerError, err)
 		return echo.NewHTTPError(http.StatusInternalServerError, err)
 	}
 
@@ -26,10 +37,11 @@ func BoardDetail(c echo.Context) error {
 	boardItem.CsrfName = "csrf_token"
 	boardItem.CsrfValue = cookie.Value
 
+	mixins.CreateLogger(db, logger, http.StatusOK, nil)
 	return c.JSON(http.StatusOK, boardItem)
 }
 
-func getBoardDetailInfo(board BoardResponse, id string) (BoardResponse, error) {
+func getBoardDetailInfo(db *gorm.DB, board BoardResponse, id string) (BoardResponse, error) {
 
 	// 웹 서비스 정보 중 데이터베이스 정보 추출
 	DB, err := getDBInfo()
@@ -44,10 +56,11 @@ func getBoardDetailInfo(board BoardResponse, id string) (BoardResponse, error) {
 		Table(tSermon).
 		Where(fmt.Sprintf("%s.id = ?", DB.Tables["boa"]), id).
 		Select(fmt.Sprintf(
-			"%s.id, %s.user_id, %s.email, %s.title, %s.photo, %s.post_type, %s.content, %s.status, %s.created_at",
+			"%s.id, %s.user_id, %s.email, %s.title, %s.photo, %s.post_type, %s.content, %s.summary, %s.status, %s.created_at",
 			DB.Tables["boa"],
 			DB.Tables["boa"],
 			DB.Tables["usr"],
+			DB.Tables["boa"],
 			DB.Tables["boa"],
 			DB.Tables["boa"],
 			DB.Tables["boa"],
@@ -59,6 +72,8 @@ func getBoardDetailInfo(board BoardResponse, id string) (BoardResponse, error) {
 		Scan(&board).Error; err != nil {
 		return board, err
 	}
+
+	board.ID = mixins.Signing(board.ID)
 
 	return board, nil
 }

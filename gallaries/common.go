@@ -2,17 +2,13 @@ package gallaries
 
 import (
 	"encoding/json"
-	"errors"
 	"io"
 	"mime/multipart"
 	"os"
 	"path"
 
 	"github.com/rebornist/hanbit/config"
-	"github.com/rebornist/hanbit/users"
 )
-
-var db = config.ConnectDb()
 
 func getDBInfo() (config.Database, error) {
 	// 웹 서비스 정보 중 데이터베이스 정보 추출
@@ -64,16 +60,4 @@ func fileUpload(file *multipart.FileHeader) error {
 	}
 
 	return nil
-}
-
-func userGradeCheck(uid string, grade uint8) error {
-	var user users.User
-	if err := db.Where("uid = ?", uid).Scan(&user).Error; err != nil {
-		return err
-	}
-	if user.Grade == grade {
-		return nil
-	} else {
-		return errors.New("해당 권한이 없습니다.")
-	}
 }
